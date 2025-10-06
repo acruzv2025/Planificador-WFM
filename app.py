@@ -821,6 +821,8 @@ def summary():
 def admin():
     if request.method == 'POST':
         action = request.form.get('action')
+        
+        # --- ACCIÓN PARA CREAR USUARIO (SIN CAMBIOS) ---
         if action == 'create_user':
             new_username, new_password, new_role = request.form.get('new_username'), request.form['new_password'], request.form['new_role']
             if User.query.filter_by(username=new_username).first(): flash(f"El usuario '{new_username}' ya existe.", 'error')
@@ -829,6 +831,39 @@ def admin():
                 new_user = User(username=new_username, password_hash=generate_password_hash(new_password, method='pbkdf2:sha256'), role=new_role)
                 db.session.add(new_user); db.session.commit()
                 flash(f"Usuario '{new_username}' creado con rol '{new_role}'.", 'success')
+        
+        # --- NUEVA ACCIÓN: ELIMINAR USUARIO ---
+        elif action == 'delete_user':
+            user_id_to_delete = request.form.get('user_id')
+            user_to_delete = User.query.get(user_id_to_delete)
+            if user_to_delete:
+                if user_to_delete.username == 'admin':
+                    flash("No se puede eliminar al usuario administrador principal.", 'error')
+                else:
+                    db.session.delete(user_to_delete)
+                    db.session.commit()
+                    flash(f"Usuario '{user_to_delete.username}' eliminado con éxito.", 'success')
+            else:
+                flash("No se encontró el usuario a eliminar.", 'error')
+        
+        # --- NUEVA ACCIÓN: CAMBIAR CONTRASEÑA ---
+        elif action == 'change_password':
+            user_id_for_pwd = request.form.get('user_id_for_password')
+            new_password = request.form.get('new_password_modal')
+            confirm_password = request.form.get('confirm_password_modal')
+            
+            user_to_update = User.query.get(user_id_for_pwd)
+            
+            if not user_to_update:
+                flash("Usuario no encontrado.", "error")
+            elif not new_password or new_password != confirm_password:
+                flash("Las contraseñas no coinciden o están vacías. No se realizaron cambios.", "error")
+            else:
+                user_to_update.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
+                db.session.commit()
+                flash(f"La contraseña para '{user_to_update.username}' ha sido actualizada con éxito.", 'success')
+
+        # --- LÓGICA EXISTENTE (CAMPAÑAS, SEGMENTOS, REGLAS, ETC.) ---
         elif action == 'create_campaign':
             code = request.form.get('new_campaign_code')
             new_campaign_name = request.form.get('new_campaign_name')
@@ -912,8 +947,11 @@ def admin():
             if rule_to_delete:
                 db.session.delete(rule_to_delete); db.session.commit()
                 flash(f"Regla '{rule_to_delete.name}' eliminada.", 'success')
+        
+        # --- REDIRECCIÓN AL FINAL ---
         return redirect(url_for('admin'))
     
+    # La parte GET de la función no cambia
     users, campaigns, rules = User.query.all(), Campaign.query.order_by(Campaign.name).all(), SchedulingRule.query.order_by(SchedulingRule.country, SchedulingRule.name).all()
     return render_template('admin_users.html', users=users, campaigns=campaigns, rules=rules)
 
@@ -2651,6 +2689,7 @@ def db_seed_breaks():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
 
