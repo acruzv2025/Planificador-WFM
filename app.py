@@ -21,19 +21,38 @@ import xlsxwriter
 # ==============================================================================
 # 0. CONFIGURACIÓN, MODELOS Y CONSTANTES
 # ==============================================================================
-app = Flask(__name__, instance_relative_config=True)
-app.secret_key = 'mi-clave-secta-muy-dificil-de-adivinar-12345'
+
+# --- BLOQUE DE CÓDIGO DEFINITIVO Y CORRECTO ---
+
+# 1. Definimos la ruta base del proyecto de forma robusta
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'wfm.db')
 
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
+# 2. Inicializamos la aplicación Flask, indicando explícitamente la carpeta de plantillas
+#    Esta es la corrección clave para los errores "TemplateNotFound"
+app = Flask(__name__,
+            instance_relative_config=True,
+            template_folder=os.path.join(basedir, 'templates'))
 
+# 3. Configuramos la clave secreta, necesaria para las sesiones de usuario
+app.secret_key = 'mi-clave-secta-muy-dificil-de-adivinar-12345'
+
+# 4. Configuramos la base de datos para que funcione en Render (PostgreSQL)
+#    Lee la URL de la base de datos desde las variables de entorno que configuramos
+DATABASE_URL = os.environ.get('DATABASE_URL')
+#    Pequeño ajuste necesario para la compatibilidad entre Render y SQLAlchemy
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+
+# --- FIN DEL BLOQUE DEFINITIVO Y CORRECTO ---
+
+
+# El resto de la configuración de la base de datos se mantiene igual
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
 
 VALID_AUSENCIA_CODES = ["VAC", "BMED", "LICMATER", "LICPATER", "LACT", "FEST", "ACC", "ENF", "ENFHOSP", "SIT-ESP", "OTRO"]
 
@@ -2630,3 +2649,4 @@ def db_seed_breaks():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
