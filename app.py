@@ -23,31 +23,44 @@ import xlsxwriter
 # 0. CONFIGURACIÓN, MODELOS Y CONSTANTES
 # ==============================================================================
 
-# 1. Obtenemos la URL de la base de datos. Si no existe, el programa se detendrá.
+# --- BLOQUE DE CÓDIGO FINAL, CORREGIDO Y A PRUEBA DE FALLOS ---
+
+# 1. Obtenemos la URL de la base de datos de Render ANTES DE TODO.
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
-    raise RuntimeError("ERROR FATAL: La variable de entorno DATABASE_URL no fue encontrada. Revisa la configuración del Environment Group en Render.")
+    # Si la variable no existe, el programa se detendrá con un error claro.
+    # Eliminamos el print de depuración que ya no es necesario.
+    raise RuntimeError("ERROR FATAL: La variable de entorno DATABASE_URL no fue encontrada.")
 
 # Ajuste para compatibilidad con SQLAlchemy
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# 2. Definimos la ruta base para las plantillas
+# 2. Definimos la ruta base del proyecto para encontrar las plantillas.
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# 3. Inicializamos Flask
+# 3. Inicializamos la aplicación Flask, indicando explícitamente la carpeta de plantillas.
 app = Flask(__name__,
             instance_relative_config=True,
             template_folder=os.path.join(basedir, 'templates'))
 
-# 4. Configuramos la app
+# 4. Configuramos la app con la clave secreta y la URI de la base de datos.
 app.secret_key = 'mi-clave-secta-muy-dificil-de-adivinar-12345'
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 5. Inicializamos la base de datos
+# 5. Inicializamos las extensiones de la base de datos DESPUÉS de que toda la configuración esté lista.
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+
+# --- FIN DEL BLOQUE FINAL Y A PRUEBA DE FALLOS ---
+
+
+VALID_AUSENCIA_CODES = ["VAC", "BMED", "LICMATER", "LICPATER", "LACT", "FEST", "ACC", "ENF", "ENFHOSP", "SIT-ESP", "OTRO"]
+
+user_campaign_permissions = db.Table('user_campaign_permission',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('campaign_id', db.Integer, db.ForeignKey('campaign.id'), primary_key=True)
 )
 
 # --- MODELOS DE BASE DE DATOS ---
@@ -2638,6 +2651,7 @@ def db_seed_breaks():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
 
