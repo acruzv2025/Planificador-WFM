@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Comparativa Forecast vs. Real - Emergia{% endblock %}
+
+{% block page_title %}Módulo de Comparativa: Pronóstico vs. Real{% endblock %}
+
+{% block head_content %}
+<style>
+    /* Estilos específicos para la página de Forecasting */
+    .filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        align-items: end;
+        background-color: #ffffff;
+        border: 1px solid var(--color-border);
+        padding: 2rem;
+        border-radius: 12px;
+        margin-bottom: 2.5rem;
+    }
+    .section-card {
+        background-color: #ffffff;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+    .section-card h2 {
+        font-size: 1.3rem;
+        margin-top: 0;
+    }
+    .loader {
+        display: none; margin: 2rem auto; width: 48px; height: 48px;
+        border: 5px solid rgba(0,0,0,0.1); border-top-color: var(--color-emergia-magenta);
+        border-radius: 50%; animation: rotation 1s linear infinite;
+    }
+    @keyframes rotation { 100% { transform: rotate(360deg); } }
+    
+    .table-wrapper {
+        width: 100%; overflow-x: auto; border: 1px solid var(--color-border);
+        border-radius: 8px; margin-top: 1.5rem;
+    }
+    .result-table { width: 100%; border-collapse: collapse; }
+    .result-table th, .result-table td {
+        padding: 10px 8px; border-bottom: 1px solid var(--color-border);
+        text-align: center; white-space: nowrap;
+    }
+    .result-table th { background-color: #f8f9fa; font-weight: 600; position: sticky; top: 0; }
+    .result-table tbody tr:hover { background-color: rgba(136, 0, 227, 0.05); }
+    .text-danger { color: var(--color-error) !important; font-weight: 600; }
+    .text-success { color: var(--color-success) !important; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="alert-container"></div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}{% endif %}
+{% endwith %}
+
+<div class="filters">
+    <div class="form-group"><label for="segment_id">Seleccionar Segmento:</label><select id="segment_id"><option value="">-- Seleccione un segmento --</option>{% for segment in segments %}<option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label for="start_date">Fecha de Inicio:</label><input type="date" id="start_date"></div>
+    <div class="form-group"><label for="end_date">Fecha de Fin:</label><input type="date" id="end_date"></div>
+</div>
+
+<div class="section-card">
+    <h2>Paso 1: Cargar Archivo de Datos Reales</h2>
+    <p style="margin-top: 0.5rem; color: var(--color-light-text);">Seleccione el segmento y el archivo Excel con los datos reales (hojas: ENTRANTES, ATENDIDAS, NDS, AHT).</p>
+    <form id="upload-actuals-form">
+        <div class="form-group" style="max-width: 500px; margin-top: 1.5rem;">
+            <label for="actuals_excel">Archivo Excel de Reales:</label>
+            <input type="file" id="actuals_excel" name="actuals_excel" accept=".xlsx, .xls" required>
+        </div>
+        <button type="submit" id="upload-btn" style="max-width: 250px; margin-top: 1rem;">Cargar Archivo</button>
+    </form>
+</div>
+
+<div class="section-card">
+    <h2>Paso 2: Generar Reporte</h2>
+    <p style="margin-top: 0.5rem; color: var(--color-light-text);">Una vez cargado el archivo de reales, seleccione el rango de fechas y genere la comparativa.</p>
+    <button type="button" id="generate-forecast-btn" style="max-width: 250px; margin-top: 1rem;">Generar Comparativa</button>
+</div>
+
+<div id="results-container" class="mt-5" style="display: none;">
+    <h2>Resultados de la Comparativa</h2>
+    
+    <div class="section-card" style="margin-bottom: 2rem;">
+        <div style="position: relative; height: 50vh; min-height: 400px;">
+            <canvas id="forecastChart"></canvas>
+        </div>
+    </div>
+
+    <div class="section-card" style="margin-bottom: 2rem;">
+        <div style="position: relative; height: 40vh; min-height: 300px;">
+            <canvas id="ahtChart"></canvas>
+        </div>
+    </div>
+    
+    <div id="table-wrapper" class="table-wrapper">
+        <!-- La tabla de resultados se insertará aquí -->
+    </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<!-- Las librerías como jQuery y Bootstrap ya deberían estar en tu base.html -->
+<!-- Chart.js es específico para esta página, así que lo añadimos aquí -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // El resto de tu JavaScript va aquí, sin cambios en la lógica.
+    Chart.register(ChartDataLabels);
+
+    const uploadForm = document.getElementById('upload-actuals-form');
+    const generateBtn = document.getElementById('generate-forecast-btn');
+    const resultsContainer = document.getElementById('results-container');
+    const tableWrapper = document.getElementById('table-wrapper');
+    const segmentSelect = document.getElementById('segment_id');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    let forecastChart = null;
+    let ahtChart = null; 
+
+    function showAlert(message, type = 'danger') {
+        const alertContainer = document.getElementById('alert-container');
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `flash flash-${type}`;
+        alertDiv.innerHTML = message;
+        alertContainer.innerHTML = '';
+        alertContainer.appendChild(alertDiv);
+    }
+
+    uploadForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const segmentId = segmentSelect.value;
+        const fileInput = document.getElementById('actuals_excel');
+        if (!segmentId) { showAlert('Por favor, seleccione un segmento.'); return; }
+        if (fileInput.files.length === 0) { showAlert('Por favor, seleccione un archivo Excel.'); return; }
+        const formData = new FormData();
+        formData.append('segment_id', segmentId);
+        formData.append('actuals_excel', fileInput.files[0]);
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Cargando...';
+        fetch("{{ url_for('upload_actuals') }}", { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) showAlert(data.error, 'error'); else showAlert(data.message, 'success');
+        })
+        .catch(err => showAlert('Error de red al subir el archivo.', 'error'))
+        .finally(() => { uploadBtn.disabled = false; uploadBtn.textContent = 'Cargar Archivo'; });
+    });
+
+    generateBtn.addEventListener('click', function() {
+        // ... (el resto del script es idéntico al que ya tenías)
+        const segmentId = segmentSelect.value;
+        const startDate = document.getElementById('start_date').value;
+        const endDate = document.getElementById('end_date').value;
+        if (!segmentId || !startDate || !endDate) { showAlert('Por favor, seleccione un segmento y un rango de fechas.'); return; }
+        
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = 'Generando...';
+        tableWrapper.innerHTML = '<div class="loader" style="display: block;"></div>';
+        resultsContainer.style.display = 'block';
+
+        const payload = { segment_id: segmentId, start_date: startDate, end_date: endDate };
+        fetch("{{ url_for('get_forecasting_data') }}", { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showAlert(data.error, 'error');
+                tableWrapper.innerHTML = `<div class="flash flash-error">${data.error}</div>`;
+                if (forecastChart) forecastChart.destroy();
+                if (ahtChart) ahtChart.destroy();
+            } else {
+                renderTable(data);
+                renderChart(data);
+                renderAHTChart(data);
+            }
+        })
+        .catch(error => {
+            showAlert(`Ocurrió un error de red: ${error.message}`, 'error');
+            tableWrapper.innerHTML = `<div class="flash flash-error">Error: ${error.message}</div>`;
+        })
+        .finally(() => { generateBtn.disabled = false; generateBtn.textContent = 'Generar Comparativa'; });
+    });
+    
+    function renderTable(data) {
+        // ... (sin cambios)
+        if (!data || data.length === 0) { tableWrapper.innerHTML = '<div class="flash">No se encontraron datos.</div>'; return; }
+        const headers = [ 'Fecha', 'Entrantes (Real)', 'Atendidas (Real)', 'Llamadas NDS', '% NDA', '% NDS', 'AHT Real', 'AHT Previsto', 'Llamadas Previstas', '% Desviación Llamadas', '% Desviación AHT' ];
+        let tableHtml = '<table class="result-table"><thead><tr>';
+        headers.forEach(h => { tableHtml += `<th>${h}</th>`; });
+        tableHtml += '</tr></thead><tbody>';
+        data.forEach(day => {
+            const desvCalls = parseFloat(day.desviacion_llamadas_percent); const desvCallsClass = !isNaN(desvCalls) ? (desvCalls < 0 ? 'text-danger' : 'text-success') : '';
+            const desvAht = parseFloat(day.desviacion_aht_percent); const desvAhtClass = !isNaN(desvAht) ? (desvAht > 0 ? 'text-danger' : 'text-success') : '';
+            tableHtml += `<tr><td>${day.date}</td><td>${day.real_entrantes}</td><td>${day.real_atendidas}</td><td>${day.real_llamadas_nds}</td><td>${day.real_nda}</td><td>${day.real_nds_percent}</td><td>${day.real_aht}</td><td>${day.forecast_aht}</td><td>${day.forecast_calls}</td><td class="${desvCallsClass}">${day.desviacion_llamadas_percent}</td><td class="${desvAhtClass}">${day.desviacion_aht_percent}</td></tr>`;
+        });
+        tableHtml += '</tbody></table>'; tableWrapper.innerHTML = tableHtml;
+    }
+    
+    function renderChart(data) {
+        // ... (sin cambios)
+        const ctx = document.getElementById('forecastChart').getContext('2d');
+        const parseValue = (value) => (value === "N/A" || value === null) ? null : value;
+        const labels = data.map(day => day.date);
+        const forecastData = data.map(day => parseValue(day.forecast_calls));
+        const realData = data.map(day => parseValue(day.real_entrantes));
+        const ndaData = data.map(day => parseValue(day.real_nda_numeric));
+        const atendidasData = data.map(day => parseValue(day.real_atendidas));
+        if (forecastChart) forecastChart.destroy();
+        forecastChart = new Chart(ctx, {
+            type: 'line', data: { labels: labels, datasets: [
+                { label: 'Pronóstico WFM', data: forecastData, borderColor: '#E67E22', backgroundColor: 'rgba(230, 126, 34, 0.2)', fill: true, tension: 0.1, yAxisID: 'y', order: 3 },
+                { label: 'Llamadas Entrantes (Real)', data: realData, borderColor: '#A569BD', fill: false, tension: 0.1, yAxisID: 'y', order: 2 },
+                { label: 'Llamadas Atendidas', data: atendidasData, borderColor: '#D7BDE2', fill: false, tension: 0.1, borderDash: [5, 5], yAxisID: 'y', order: 1 },
+                { label: 'NDA Real (%)', data: ndaData, borderColor: '#27AE60', backgroundColor: '#27AE60', fill: false, tension: 0.4, yAxisID: 'y1', order: 0 }
+            ]}, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { title: { display: true, text: 'Comparativa de Llamadas y Nivel de Atención', font: { size: 18 } }, legend: { position: 'top' }, datalabels: { display: false } }, scales: { y: { type: 'linear', display: true, position: 'left', beginAtZero: true, title: { display: true, text: 'Número de Llamadas' } }, y1: { type: 'linear', display: true, position: 'right', min: 70, max: 100, title: { display: true, text: 'NDA (%)' }, grid: { drawOnChartArea: false }, ticks: { callback: value => value + '%' } }, x: { title: { display: true, text: 'Fecha' }, ticks: { callback: function(value) { const label = this.getLabelForValue(value); return label.substring(0, 5); } } } } }
+        });
+    }
+
+    function renderAHTChart(data) {
+        // ... (sin cambios)
+        const ctx = document.getElementById('ahtChart').getContext('2d');
+        const parseValue = (value) => (value === "N/A" || value === null) ? null : value;
+        const labels = data.map(day => day.date);
+        const forecastAHT = data.map(day => parseValue(day.forecast_aht));
+        const realAHT = data.map(day => parseValue(day.real_aht));
+        if (ahtChart) { ahtChart.destroy(); }
+        ahtChart = new Chart(ctx, {
+            type: 'bar', data: { labels: labels, datasets: [{ label: 'AHT Real', data: realAHT, backgroundColor: '#7f8c8d' }, { label: 'AHT Previsto', data: forecastAHT, backgroundColor: '#bdc3c7' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { title: { display: true, text: 'Comparativa de AHT: Previsto vs. Real', font: { size: 16 } }, legend: { position: 'bottom' }, datalabels: { anchor: 'end', align: 'end', formatter: function(value) { return value > 0 ? Math.round(value) : null; }, font: { weight: 'bold', size: 10 }, color: '#444' } }, scales: { y: { beginAtZero: false, title: { display: true, text: 'Segundos' } }, x: { display: true, ticks: { maxRotation: 90, minRotation: 45, callback: function(value) { const label = this.getLabelForValue(value); return label.substring(0, 5); } } } } }
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial de Cálculos - Emergia</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --color-emergia-magenta: #8800e3;
+            --color-emergia-magenta-dark: #7100bc;
+            --color-dark-text: #2c3e50; --color-light-text: #7f8c8d; --color-background: #f5f6fa;
+            --color-surface: #ffffff; --color-border: #dfe4ea; --color-error: #e74c3c;
+            --shadow: 0 5px 20px rgba(0, 0, 0, 0.07);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Montserrat', sans-serif; background-color: var(--color-background); color: var(--color-dark-text); padding: 1rem; }
+        .card { background: var(--color-surface); border-radius: 16px; box-shadow: var(--shadow); max-width: 95vw; margin: auto; overflow: hidden; }
+        .header { padding: 2rem 3rem; display: flex; flex-direction: column; align-items: center; border-bottom: 1px solid var(--color-border); }
+        .logo { max-width: 180px; margin-bottom: 1.5rem; }
+        .header h1 { text-align: center; font-weight: 600; margin-bottom: 0.5rem; }
+        .nav-links { display: flex; gap: 1rem; align-items: center; }
+        .nav-links span { color: var(--color-border); }
+        .nav-links a { color: var(--color-light-text); text-decoration: none; font-weight: 500; transition: color 0.2s ease; }
+        .nav-links a:hover { color: var(--color-emergia-magenta); }
+        .content { padding: 2.5rem 3rem; }
+        .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; align-items: end; background-color: #f8f9fa; padding: 2rem; border-radius: 12px; margin-bottom: 2.5rem; }
+        .form-group { display: flex; flex-direction: column; }
+        label { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; }
+        input, select { width: 100%; padding: 0.8rem; border: 1px solid var(--color-border); border-radius: 8px; font-size: 1rem; font-family: 'Montserrat', sans-serif; }
+        button { padding: 0.9rem; font-size: 1rem; font-weight: 600; text-transform: uppercase; color: #fff; background-color: var(--color-emergia-magenta); border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s ease; }
+        button:hover { background-color: var(--color-emergia-magenta-dark); }
+        .loader { display: none; margin: 2rem auto; width: 48px; height: 48px; border: 5px solid rgba(0,0,0,0.1); border-top-color: var(--color-emergia-magenta); border-radius: 50%; animation: rotation 1s linear infinite; }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .alert { padding: 1rem; border-radius: 8px; text-align: center; font-weight: 500; margin-top: 1rem; }
+        .alert-error { background-color: var(--color-error); color: white; }
+        .results-container h2 { font-size: 1.5rem; font-weight: 600; color: var(--color-dark-text); }
+        .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--color-border); border-radius: 8px; margin-top: 1.5rem;}
+        .result-table { width: 100%; border-collapse: collapse; }
+        .result-table th, .result-table td { padding: 10px 8px; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+        .result-table th { background-color: #f8f9fa; font-weight: 600; position: sticky; top: 0; z-index: 1;}
+        .result-table tbody tr:last-of-type td { border-bottom: none; }
+        .result-table tbody tr:hover { background-color: rgba(136, 0, 227, 0.05); }
+        .result-table td { text-align: center; }
+        .result-table th:nth-child(-n+5), .result-table td:nth-child(-n+5) { text-align: left; white-space: nowrap; }
+        .result-table th:nth-child(n+6) { writing-mode: vertical-lr; text-align: center; padding: 15px 5px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <img src="{{ url_for('static', filename='logo-emergia.png') }}" alt="Logo de Emergia" class="logo">
+            <h1>Consulta de Históricos</h1>
+            <div class="nav-links">
+                <a href="{{ url_for('calculator') }}">Calculadora</a>
+                <span>|</span>
+                <a href="{{ url_for('scheduling') }}">Planificación</a>
+                <a href="{{ url_for('breaks') }}">Distribución de Descansos</a><span>|</span>
+                <span>|</span>
+                <a href="{{ url_for('summary') }}">Resumen</a><span>|</span>
+                {% if session.get('role') == 'admin' %}
+                    <a href="{{ url_for('admin') }}">Administrar</a>
+                    <span>|</span>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Cerrar Sesión</a>
+            </div>
+        </div>
+        
+        <div class="content">
+            <form id="history-form" class="filters">
+                <div class="form-group">
+                    <label for="segment_id">Servicio (Segmento)</label>
+                    <select id="segment_id" name="segment_id" required>
+                        <option value="">Seleccione un servicio...</option>
+                        {% for segment in segments %}
+                            <option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>
+                        {% else %}
+                             <option value="" disabled>No tienes permisos para ningún servicio.</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="start_date">Fecha de Inicio</label>
+                    <input type="date" id="start_date" name="start_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="end_date">Fecha de Fin</label>
+                    <input type="date" id="end_date" name="end_date" required>
+                </div>
+                <div class="form-group">
+                    <button type="submit">Consultar</button>
+                </div>
+            </form>
+
+            <div class="loader" id="loader"></div>
+            <div id="results-container" style="margin-top: 2.5rem;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ... (El JavaScript de esta página no necesita cambios) ...
+    </script>
+</body>
+</html>

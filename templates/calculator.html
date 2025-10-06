@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}Calculadora de Dimensionamiento - Emergia{% endblock %}
+
+{% block page_title %}Calculadora de Dimensionamiento de Agentes{% endblock %}
+
+{% block head_content %}
+<style>
+    /* 
+      ESTILOS DEL NUEVO DISEÑO.
+      Estos estilos están encapsulados en este bloque y solo afectarán a esta página,
+      no a las demás que usan base.html.
+    */
+    :root {
+        --color-emergia-magenta: #8800e3; --color-emergia-magenta-dark: #7100bc;
+        --color-dark-text: #2c3e50; --color-light-text: #7f8c8d; --color-background: #f5f6fa;
+        --color-surface: #ffffff; --color-border: #dfe4ea; --color-error: #e74c3c; --color-success: #27ae60;
+        --shadow: 0 5px 20px rgba(0, 0, 0, 0.07);
+    }
+    
+    /* Contenedor principal */
+    .calculator-content-wrapper { padding: 2.5rem 3rem; }
+    @media (max-width: 768px) { .calculator-content-wrapper { padding: 1.5rem 1rem; } }
+
+    /* Grid del formulario */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem 3rem; }
+    @media (max-width: 992px) { .form-grid { grid-template-columns: 1fr; } }
+    
+    .form-section { background: var(--color-surface); padding: 2rem; border-radius: 12px; border: 1px solid var(--color-border); }
+    .form-section h2 { font-size: 1.2rem; font-weight: 600; color: var(--color-dark-text); margin-bottom: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; }
+    .form-group { display: flex; flex-direction: column; margin-bottom: 1.5rem; }
+    
+    label { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    
+    input[type="file"], input[type="number"], select { 
+        width: 100%; padding: 0.8rem; border: 1px solid var(--color-border); 
+        border-radius: 8px; font-size: 1rem; font-family: 'Montserrat', sans-serif; 
+        transition: border-color 0.2s ease, box-shadow 0.2s ease; 
+    }
+    input:focus, select:focus { 
+        outline: none; border-color: var(--color-emergia-magenta); 
+        box-shadow: 0 0 0 3px rgba(136, 0, 227, 0.15); 
+    }
+    
+    .main-action-button { 
+        grid-column: 1 / -1; padding: 1rem; font-size: 1.1rem; font-weight: 600; 
+        text-transform: uppercase; letter-spacing: 0.5px; color: #fff; 
+        background-color: var(--color-emergia-magenta); border: none; border-radius: 8px; 
+        cursor: pointer; transition: background-color 0.2s ease, transform 0.2s ease; 
+        margin-top: 1.5rem; 
+    }
+    .main-action-button:hover { background-color: var(--color-emergia-magenta-dark); transform: translateY(-2px); }
+    .main-action-button:disabled { background: #bdc3c7; cursor: not-allowed; transform: translateY(0); }
+    
+    .flash { margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; font-weight: 500; }
+    .flash-success { background-color: var(--color-success); color: white; }
+    .flash-error { background-color: var(--color-error); color: white; }
+    
+    .feedback-area { text-align: center; margin-top: 1.5rem; }
+    .alert { display: none; padding: 1rem; border-radius: 8px; text-align: center; font-weight: 500; margin-bottom: 1rem; }
+    .alert-error { background-color: var(--color-error); color: white; }
+    .loader { display: none; width: 48px; height: 48px; border: 5px solid rgba(0,0,0,0.1); border-top-color: var(--color-emergia-magenta); border-radius: 50%; animation: rotation 1s linear infinite; margin: 1rem auto; }
+    @keyframes rotation { 100% { transform: rotate(360deg); } }
+    
+    /* Estilos para Tarjetas KPI (Adaptados de summary.html) */
+    .kpi-container {
+        display: none; /* Se mostrará con JS */
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.5rem;
+        margin-top: 2.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .kpi-card {
+        display: flex;
+        align-items: center;
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 1px solid var(--color-border);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+    }
+    .kpi-icon {
+        flex-shrink: 0;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        background-color: rgba(136, 0, 227, 0.1);
+    }
+    .kpi-icon svg {
+        width: 24px;
+        height: 24px;
+        stroke: var(--color-emergia-magenta);
+    }
+    .kpi-content { line-height: 1.2; }
+    .kpi-value { font-size: 2rem; font-weight: 700; color: var(--color-dark-text); }
+    .kpi-label { font-size: 0.9rem; color: var(--color-light-text); font-weight: 500; }
+    
+    /* Estilos para tablas de resultados */
+    .results-container { display: none; }
+    .table-container { margin-top: 3rem; }
+    .table-container h2 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    .table-wrapper { border: 1px solid var(--color-border); border-radius: 8px; max-height: 80vh; overflow: auto; }
+    .result-table { border-collapse: separate; border-spacing: 0; width: 100%; background: #fff; }
+    .result-table th, .result-table td { padding: 14px 12px; text-align: center; border-bottom: 1px solid var(--color-border); }
+    .result-table th { background-color: #f8f9fa; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+    .result-table tbody tr:hover { background-color: #f0e6f9; }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="calculator-content-wrapper">
+    <div id="flash-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}{% for category, message in messages %}<div class="flash flash-{{ category }}">{{ message }}</div>{% endfor %}{% endif %}
+        {% endwith %}
+    </div>
+
+    <form id="dimensionamiento-form">
+        <div class="form-grid">
+            <div class="form-section">
+                <h2>Plantilla y Servicio</h2>
+                <div class="form-group">
+                    <label for="segment_id">Seleccionar Servicio (Segmento)</label>
+                    <select id="segment_id" name="segment_id" required>
+                        {% for segment in segments %}<option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>{% else %}<option value="" disabled>No tienes permisos.</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="plantilla_excel">Cargar archivo (.xlsx)</label>
+                    <input type="file" id="plantilla_excel" name="plantilla_excel" accept=".xlsx" required>
+                </div>
+            </div>
+            <div class="form-section">
+                <h2>Parámetros de Cálculo</h2>
+                <div class="form-group"><label for="sla_objetivo">SLA Objetivo (ej. 0.60)</label><input type="number" id="sla_objetivo" name="sla_objetivo" value="0.60" step="0.01" required></div>
+                <div class="form-group"><label for="sla_tiempo">SLA Tiempo (segundos)</label><input type="number" id="sla_tiempo" name="sla_tiempo" value="20" step="1" required></div>
+                <div class="form-group"><label for="nda_objetivo">NDA Objetivo (ej. 0.90)</label><input type="number" id="nda_objetivo" name="nda_objetivo" value="0.90" step="0.01" required></div>
+                <div class="form-group"><label for="intervalo_seg">Duración del Intervalo (segundos)</label><input type="number" id="intervalo_seg" name="intervalo_seg" value="1800" step="1" required></div>
+            </div>
+            <button type="submit" id="submit-button" class="main-action-button">Calcular y Guardar</button>
+        </div>
+    </form>
+
+    <div class="feedback-area">
+        <div class="loader" id="loader"></div>
+        <div class="alert alert-error" id="error-message"></div>
+    </div>
+    
+    <!-- Contenedor para KPIs -->
+    <div class="kpi-container" id="kpi-container">
+        <!-- Las tarjetas KPI se insertarán aquí dinámicamente -->
+    </div>
+
+    <!-- Contenedor para Tablas -->
+    <div class="results-container" id="results-container">
+        <!-- Las tablas se insertarán aquí dinámicamente -->
+    </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+    const form = document.getElementById('dimensionamiento-form');
+    const submitButton = document.getElementById('submit-button');
+    const loader = document.getElementById('loader');
+    const errorMessage = document.getElementById('error-message');
+    const resultsContainer = document.getElementById('results-container');
+    const flashContainer = document.getElementById('flash-container');
+    const kpiContainer = document.getElementById('kpi-container');
+
+    function createTableFromData(dataObject, title) {
+        let originalHeaders = [...dataObject.columns];
+        let finalHeaders = originalHeaders;
+        if (dataObject.data && dataObject.data.length > 0) {
+            const numDataCols = dataObject.data[0].length;
+            const numHeaderCols = originalHeaders.length;
+            if (numDataCols > numHeaderCols) {
+                const fixedHeaders = originalHeaders.slice(0, 3);
+                const timeHeaders = originalHeaders.slice(3);
+                finalHeaders = [...fixedHeaders, 'Tipo', ...timeHeaders.slice(1)];
+                if (finalHeaders.length > numDataCols) { finalHeaders.length = numDataCols; }
+            }
+        }
+        const container = document.createElement('div');
+        container.className = 'table-container';
+        container.innerHTML = `<h2>${title}</h2>`;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+        const table = document.createElement('table');
+        table.className = 'result-table';
+        const thead = table.createTHead();
+        const headerRow = thead.insertRow();
+        finalHeaders.forEach(colName => {
+            const th = document.createElement('th');
+            th.textContent = colName;
+            headerRow.appendChild(th);
+        });
+        const tbody = table.createTBody();
+        dataObject.data.forEach(rowData => {
+            const row = tbody.insertRow();
+            rowData.forEach(cellData => {
+                const cell = row.insertCell();
+                const num = parseFloat(cellData);
+                if (!isNaN(num) && String(cellData).trim() === String(num)) {
+                    cell.textContent = num.toFixed(1);
+                } else {
+                    cell.textContent = cellData === null ? '' : cellData;
+                }
+            });
+        });
+        wrapper.appendChild(table);
+        container.appendChild(wrapper);
+        return container;
+    }
+
+    function renderKpiCards(kpiData) {
+        const kpi_definitions = [
+            { 
+                label: '% Absentismo General', 
+                key: 'absentismo_pct',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="23" y1="7" x2="17" y2="13"></line><line x1="17" y1="7" x2="23" y2="13"></line></svg>'
+            },
+            { 
+                label: '% Auxiliares General', 
+                key: 'auxiliares_pct',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>'
+            },
+            { 
+                label: '% Desconexiones General',
+                key: 'desconexiones_pct',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>'
+            }
+        ];
+
+        const kpi_html = kpi_definitions.map(kpi => {
+            const value = kpiData[kpi.key];
+            const formattedValue = (value !== null && !isNaN(value)) ? value.toFixed(1) + '%' : 'N/A';
+            return `
+                <div class="kpi-card">
+                    <div class="kpi-icon">${kpi.icon}</div>
+                    <div class="kpi-content">
+                        <div class="kpi-value">${formattedValue}</div>
+                        <div class="kpi-label">${kpi.label}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        kpiContainer.innerHTML = kpi_html;
+        kpiContainer.style.display = 'grid';
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        submitButton.disabled = true;
+        loader.style.display = 'block';
+        errorMessage.style.display = 'none';
+        
+        resultsContainer.innerHTML = '';
+        resultsContainer.style.display = 'none';
+        kpiContainer.innerHTML = '';
+        kpiContainer.style.display = 'none';
+        flashContainer.innerHTML = '';
+        
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch("{{ url_for('calcular') }}", { method: 'POST', body: formData });
+            
+            if (response.ok) {
+                const resultData = await response.json();
+
+                if (resultData.kpis) {
+                    renderKpiCards(resultData.kpis);
+                }
+
+                resultsContainer.appendChild(createTableFromData(resultData.dimensionados, 'Agentes Dimensionados'));
+                resultsContainer.appendChild(createTableFromData(resultData.presentes, 'Agentes Presentes'));
+                resultsContainer.appendChild(createTableFromData(resultData.logados, 'Agentes Logados'));
+                resultsContainer.appendChild(createTableFromData(resultData.efectivos, 'Agentes Efectivos Requeridos'));
+                resultsContainer.style.display = 'block';
+
+                const successFlash = document.createElement('div');
+                successFlash.className = 'flash flash-success';
+                successFlash.textContent = 'Resultados calculados y guardados con éxito.';
+                flashContainer.appendChild(successFlash);
+
+            } else {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Error ${response.status}`);
+            }
+        } catch (error) {
+            errorMessage.textContent = 'Error: ' + error.message;
+            errorMessage.style.display = 'block';
+        } finally {
+            submitButton.disabled = false;
+            loader.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %}
