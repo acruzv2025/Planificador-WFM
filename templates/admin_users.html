@@ -28,6 +28,12 @@
     hr { margin: 2rem 0; border: none; border-top: 1px solid var(--color-border); }
     .schedule-grid { display: grid; grid-template-columns: 80px 1fr 1fr; gap: 0.5rem 1rem; align-items: center; }
     .schedule-grid label { font-weight: normal; }
+    /* Estilos para el Modal */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: none; align-items: center; justify-content: center; }
+    .modal-content { background: white; padding: 2rem; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #aaa; }
+    .user-actions { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; width: 100%;}
 </style>
 {% endblock %}
 
@@ -39,6 +45,7 @@
 {% endwith %}
 
 <div class="main-grid">
+    <!-- Columna de Campañas y Segmentos (Sin Cambios) -->
     <div class="section-card">
         <h2>Campañas y Segmentos</h2>
         <div class="item-list"><ul>
@@ -115,6 +122,8 @@
             <button type="button" id="cancel-edit-btn" onclick="resetSegmentForm()" style="display:none; background-color: #7f8c8d; margin-top: 0.5rem;">Cancelar Edición</button>
         </form>
     </div>
+
+    <!-- Columna de Usuarios y Permisos (MODIFICADA) -->
     <div class="section-card">
         <h2>Usuarios y Permisos</h2>
         <form method="POST" action="{{ url_for('admin') }}">
@@ -122,7 +131,7 @@
             <div class="item-list"><ul>
                 {% for user in users %}
                     <li style="flex-direction: column; align-items: flex-start;">
-                        <span>{{ user.username }}</span>
+                        <strong>{{ user.username }}</strong>
                         {% if user.username == 'admin' %}
                             <span><strong>{{ user.role }}</strong> (Todos los permisos)</span>
                         {% else %}
@@ -146,6 +155,15 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- ===> NUEVOS BOTONES DE ACCIONES <=== -->
+                            <div class="user-actions">
+                                <button type="button" class="btn-edit" onclick="openPasswordModal('{{ user.id }}', '{{ user.username }}')">Cambiar Contraseña</button>
+                                <form method="POST" action="{{ url_for('admin') }}" onsubmit="return confirm('¿Estás seguro de que quieres eliminar al usuario {{ user.username }}? Esta acción no se puede deshacer.');" style="display: inline;">
+                                    <input type="hidden" name="action" value="delete_user">
+                                    <input type="hidden" name="user_id" value="{{ user.id }}">
+                                    <button type="submit" class="btn-delete">Eliminar</button>
+                                </form>
+                            </div>
                         {% endif %}
                     </li>
                 {% endfor %}
@@ -155,12 +173,14 @@
         <form method="POST" action="{{ url_for('admin') }}">
             <input type="hidden" name="action" value="create_user">
             <h3>Crear Usuario</h3>
-            <div class="form-group"><label>Nombre</label><input type="text" name="new_username"></div>
-            <div class="form-group"><label>Contraseña</label><input type="password" name="new_password"></div>
+            <div class="form-group"><label>Nombre</label><input type="text" name="new_username" required></div>
+            <div class="form-group"><label>Contraseña</label><input type="password" name="new_password" required></div>
             <div class="form-group"><label>Rol</label><select name="new_role"><option value="user" selected>Usuario</option><option value="admin">Administrador</option></select></div>
             <button type="submit">Crear Usuario</button>
         </form>
     </div>
+
+     <!-- Columna de Reglas de Contrato (Sin Cambios) -->
      <div class="section-card">
        <h2>Reglas de Contrato</h2>
         <div class="item-list"><ul>
@@ -198,10 +218,36 @@
        </form>
    </div>
 </div>
+
+<!-- ===> NUEVO MODAL PARA CAMBIAR CONTRASEÑA <=== -->
+<div id="password-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="password-modal-title">Cambiar Contraseña</h3>
+            <button type="button" class="modal-close" onclick="closePasswordModal()">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" name="action" value="change_password">
+            <input type="hidden" id="user-id-for-password" name="user_id_for_password">
+            
+            <div class="form-group">
+                <label for="new_password_modal">Nueva Contraseña</label>
+                <input type="password" id="new_password_modal" name="new_password_modal" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm_password_modal">Confirmar Nueva Contraseña</label>
+                <input type="password" id="confirm_password_modal" name="confirm_password_modal" required>
+            </div>
+            <button type="submit">Guardar Contraseña</button>
+        </form>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+    // --- Lógica para editar segmentos (sin cambios) ---
     async function editSegment(segmentId) {
         const response = await fetch(`/api/get_segment_details/${segmentId}`);
         if (!response.ok) {
@@ -243,6 +289,29 @@
         document.getElementById('segment-id').value = '';
         document.getElementById('segment-submit-btn').innerText = 'Crear Segmento';
         document.getElementById('cancel-edit-btn').style.display = 'none';
+    }
+
+    // --- NUEVO JAVASCRIPT PARA EL MODAL DE CONTRASEÑA ---
+    const modal = document.getElementById('password-modal');
+    
+    function openPasswordModal(userId, username) {
+        document.getElementById('password-modal-title').innerText = `Cambiar Contraseña para: ${username}`;
+        document.getElementById('user-id-for-password').value = userId;
+        modal.style.display = 'flex';
+    }
+    
+    function closePasswordModal() {
+        modal.style.display = 'none';
+        // Limpiar campos por seguridad
+        document.getElementById('new_password_modal').value = '';
+        document.getElementById('confirm_password_modal').value = '';
+    }
+
+    // Cerrar el modal si se hace clic fuera del contenido
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            closePasswordModal();
+        }
     }
 </script>
 {% endblock %}
