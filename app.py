@@ -13,6 +13,7 @@ import io
 import datetime
 import functools
 import os
+print(f"--- DEBUGGING: El valor de DATABASE_URL es: {os.environ.get('DATABASE_URL')} ---")
 import json
 import random
 import click 
@@ -2648,5 +2649,6 @@ def db_seed_breaks():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
