@@ -1,16 +1,23 @@
 #!/bin/bash
 
-# Con esta línea, el script se detendrá si un comando falla
+# El script se detendrá si un comando falla
 set -o errexit
 
-echo "--- Ejecutando comandos de inicialización de la base de datos ---"
+echo "--- Comprobando la existencia de DATABASE_URL ---"
 
-# Ejecuta los comandos para crear las tablas y añadir los datos iniciales
-# Tu código es inteligente y no volverá a crear el admin si ya existe, ¡perfecto!
-flask db-custom create-all
-flask db-custom seed
+# Comprueba si la variable DATABASE_URL está definida y no está vacía
+if [ -z "${DATABASE_URL}" ]; then
+  # Si no existe, muestra un mensaje y continúa sin ejecutar los comandos de la BD
+  echo "DATABASE_URL no encontrada. Saltando la inicialización de la base de datos."
+  echo "La aplicación se conectará a la base de datos al iniciarse."
+else
+  # Si SÍ existe, ejecuta los comandos de inicialización como antes
+  echo "DATABASE_URL encontrada. Ejecutando la inicialización de la base de datos..."
+  flask db-custom create-all
+  flask db-custom seed
+  echo "--- Inicialización de la base de datos completada. ---"
+fi
 
-echo "--- Base de datos lista. Iniciando Gunicorn... ---"
-
-# Finalmente, inicia el servidor Gunicorn
+# Finalmente, sin importar lo que pasó antes, inicia el servidor Gunicorn
+echo "--- Iniciando el servidor Gunicorn... ---"
 gunicorn app:app
