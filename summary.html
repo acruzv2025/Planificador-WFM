@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block title %}Resumen de Planificación - Emergia{% endblock %}
+
+{% block page_title %}Resumen de Planificación{% endblock %}
+
+{% block head_content %}
+<style>
+    /* --- INICIO DE ESTILOS ACTUALIZADOS --- */
+
+    /* Filtros y estilos generales */
+    .filters {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem; align-items: end; background-color: #ffffff;
+        padding: 2rem; border-radius: 12px; margin-bottom: 2.5rem;
+        border: 1px solid var(--color-border);
+    }
+    .loader { margin: 2rem auto; width: 48px; height: 48px; border-width: 5px; }
+    
+    /* --- Diseño para el Resumen del Periodo (Tarjetas KPI) --- */
+    .summary-box-container {
+        border-radius: 12px;
+        padding: 1.5rem 2rem;
+        background-color: #f8f9fa;
+        border: 1px solid var(--color-border);
+    }
+    .summary-box-container h2 {
+        font-size: 1.5rem; margin-top: 0; margin-bottom: 2rem;
+        border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;
+    }
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); /* Ancho mínimo ajustado */
+        gap: 1.5rem;
+    }
+    .kpi-card {
+        display: flex;
+        align-items: center;
+        background-color: #ffffff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 1px solid var(--color-border);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.08);
+    }
+    .kpi-icon {
+        flex-shrink: 0;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        background-color: rgba(136, 0, 227, 0.1);
+    }
+    .kpi-icon svg {
+        width: 24px;
+        height: 24px;
+        stroke: var(--color-emergia-magenta);
+    }
+    .kpi-content {
+        line-height: 1.2;
+    }
+    .kpi-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--color-dark-text);
+    }
+    .kpi-label {
+        font-size: 0.9rem;
+        color: var(--color-light-text);
+        font-weight: 500;
+    }
+
+    /* Estilos de las tablas inferiores (sin cambios) */
+    .results-container { display: flex; flex-direction: column; gap: 2.5rem; }
+    .results-container h2 { font-size: 1.5rem; }
+    .result-table td:first-child, .result-table th:first-child { position: sticky; left: 0; background-color: #f8f9fa; text-align: left; font-weight: 600; }
+    .result-table th:last-child, .result-table td:last-child { position: sticky; right: 0; background-color: #e9ecef; font-weight: 600; }
+    .result-table tbody tr:hover { background-color: rgba(136, 0, 227, 0.05); }
+    .over-staff { color: var(--color-success); font-weight: 600; }
+    .under-staff { color: var(--color-error); font-weight: 600; }
+    .performance-good { background-color: rgba(39, 174, 96, 0.15); }
+    .performance-warning { background-color: rgba(241, 196, 15, 0.15); }
+    .performance-bad { background-color: rgba(231, 76, 60, 0.15); }
+</style>
+{% endblock %}
+
+{% block content %}
+<form id="summary-form" class="filters">
+    <div class="form-group">
+        <label for="segment_id">Servicio (Segmento)</label>
+        <select id="segment_id" name="segment_id" required>
+            <option value="">Seleccione un servicio...</option>
+            {% for segment in segments %}
+                <option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>
+            {% else %}
+                 <option value="" disabled>No tienes permisos para ningún servicio.</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="start_date">Fecha de Inicio</label>
+        <input type="date" id="start_date" name="start_date" required>
+    </div>
+    <div class="form-group">
+        <label for="end_date">Fecha de Fin</label>
+        <input type="date" id="end_date" name="end_date" required>
+    </div>
+    <div class="form-group">
+        <button type="button" id="submit-btn">Consultar Resumen</button>
+    </div>
+</form>
+
+<div class="loader" id="loader" style="display: none;"></div>
+<div id="feedback-container"></div>
+
+<!-- Contenedor para el nuevo resumen de KPIs -->
+<div id="summary-box-container" style="display: none; margin-bottom: 2.5rem;"></div>
+
+<!-- Contenedor para las tablas de datos detallados -->
+<div id="results-container" class="results-container"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const form = document.getElementById('summary-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const loader = document.getElementById('loader');
+    const resultsContainer = document.getElementById('results-container');
+    const feedbackContainer = document.getElementById('feedback-container');
+    const summaryBoxContainer = document.getElementById('summary-box-container');
+
+    /**
+     * VERSIÓN COMPLETA Y CORREGIDA: Renderiza TODOS los 15 KPIs.
+     */
+    function renderSummaryBox(summaryData) {
+        const formatters = {
+            percent: (val) => (val !== null && !isNaN(val)) ? (val * 100).toFixed(1) + '%' : 'N/A',
+            decimal: (val) => (val !== null && !isNaN(val)) ? val.toFixed(1) : 'N/A',
+            integer: (val) => (val !== null && !isNaN(val)) ? Math.round(val).toLocaleString('es-ES') : 'N/A'
+        };
+
+        const kpi_definitions = [
+            // Fila 1: KPIs Principales
+            { label: 'NS Final', key: 'NS Final', formatter: formatters.percent, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>' },
+            { label: 'NDA Final', key: 'NDA Final', formatter: formatters.percent, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>' },
+            { label: 'Adherencia Neta', key: 'Adherencia Neta', formatter: formatters.percent, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>' },
+            { label: 'Adherencia Bruta', key: 'Adherencia Bruta', formatter: formatters.percent, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>' },
+            // Fila 2: KPIs de Llamadas
+            { label: 'Total Llamadas', key: 'Total Llamadas', formatter: formatters.integer, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>' },
+            { label: 'Llamadas Atendidas', key: 'Llamadas Atendidas Alcanzables', formatter: formatters.integer, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><polyline points="17 11 19 13 23 9"></polyline></svg>' },
+            { label: 'Atendidas < Objetivo', key: 'Total Atendidas < Objetivo', formatter: formatters.integer, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>' },
+            { label: 'AHT promedio', key: 'AHT promedio', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' },
+             // Fila 3: KPIs de Horas
+            { label: 'Horas Dimensionadas', key: 'Horas Dimensionadas', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>' },
+            { label: 'Horas Presentes', key: 'Horas Presentes', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle></svg>' },
+            { label: 'Horas Logadas', key: 'Horas Logadas', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>' },
+            { label: 'Horas Efectivas', key: 'Horas efectivas', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>' },
+            // Fila 4: KPIs Auxiliares
+            { label: 'Call Capacity Total', key: 'Call Capacity Total', formatter: formatters.integer, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' },
+            { label: 'VAC promedio', key: 'VAC promedio', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>' },
+            { label: 'BMED promedio', key: 'BMED promedio', formatter: formatters.decimal, icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>' }
+        ];
+
+        const kpi_html = kpi_definitions.map(kpi => {
+            const value = summaryData[kpi.key];
+            const formattedValue = kpi.formatter(value);
+            return `
+                <div class="kpi-card">
+                    <div class="kpi-icon">${kpi.icon}</div>
+                    <div class="kpi-content">
+                        <div class="kpi-value">${formattedValue}</div>
+                        <div class="kpi-label">${kpi.label}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        summaryBoxContainer.innerHTML = `
+            <div class="summary-box-container">
+                <h2>Resumen del Periodo</h2>
+                <div class="kpi-grid">${kpi_html}</div>
+            </div>
+        `;
+        summaryBoxContainer.style.display = 'block';
+    }
+
+    // El resto de tu JavaScript (createTableFromData, el event listener, etc.) no necesita cambios.
+    // Simplemente pega el resto de tu script original aquí.
+    function createTableFromData(tableInfo) {
+        const section = document.createElement('div');
+        const h2 = document.createElement('h2');
+        h2.textContent = tableInfo.title;
+        section.appendChild(h2);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+        const table = document.createElement('table');
+        table.className = 'result-table';
+        const thead = table.createTHead();
+        const headerRow = thead.insertRow();
+        tableInfo.columns.forEach(colName => {
+            const th = document.createElement('th');
+            th.textContent = colName;
+            headerRow.appendChild(th);
+        });
+        const tbody = table.createTBody();
+        tableInfo.data.forEach(rowData => {
+            const row = tbody.insertRow();
+            tableInfo.columns.forEach(colName => {
+                const cell = row.insertCell();
+                const cellValue = rowData[colName];
+                let displayValue = (cellValue === null || cellValue === undefined) ? '' : cellValue;
+                if (!isNaN(parseFloat(cellValue)) && colName !== 'Día') {
+                    const numValue = parseFloat(cellValue);
+                    if (tableInfo.is_percent) { displayValue = (numValue * 100).toFixed(1) + '%'; } 
+                    else { displayValue = numValue.toFixed(1); }
+                    if (tableInfo.table_key === 'over_under_staffing') {
+                        if (numValue > 0.1) cell.classList.add('over-staff');
+                        if (numValue < -0.1) cell.classList.add('under-staff');
+                    }
+                    if (tableInfo.table_key === 'service_level_real') {
+                        if (numValue >= 0.80) cell.classList.add('performance-good');
+                        else if (numValue >= 0.70) cell.classList.add('performance-warning');
+                        else if (numValue > 0) cell.classList.add('performance-bad');
+                    }
+                    if (tableInfo.table_key === 'attention_level_real') {
+                        if (numValue >= 0.95) cell.classList.add('performance-good');
+                        else if (numValue >= 0.90) cell.classList.add('performance-warning');
+                        else if (numValue > 0) cell.classList.add('performance-bad');
+                    }
+                }
+                cell.textContent = displayValue;
+            });
+        });
+        if (tableInfo.period_total !== null && tableInfo.period_total !== undefined) {
+            const tfoot = table.createTFoot();
+            const footerRow = tfoot.insertRow();
+            const labelCell = footerRow.insertCell();
+            labelCell.textContent = 'TOTAL PERIODO';
+            labelCell.colSpan = tableInfo.columns.length - 1;
+            const totalCell = footerRow.insertCell();
+            totalCell.textContent = parseFloat(tableInfo.period_total).toLocaleString('es-ES', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+        }
+        wrapper.appendChild(table);
+        section.appendChild(wrapper);
+        return section;
+    }
+    submitBtn.addEventListener('click', async () => {
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        submitBtn.disabled = true;
+        loader.style.display = 'block';
+        resultsContainer.innerHTML = '';
+        feedbackContainer.innerHTML = '';
+        summaryBoxContainer.innerHTML = '';
+        summaryBoxContainer.style.display = 'none';
+        try {
+            const response = await fetch("{{ url_for('get_summary') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    segment_id: document.getElementById('segment_id').value,
+                    start_date: document.getElementById('start_date').value,
+                    end_date: document.getElementById('end_date').value
+                })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
+            if (result.summary) {
+                renderSummaryBox(result.summary);
+            }
+            resultsContainer.innerHTML = ''; 
+            const tables = result.tables;
+            const renderOrder = ['planned', 'present', 'logged', 'effective', 'over_under', 'service_level', 'attention_level', 'calls', 'aht', 'capacity', 'handled_calls', 'attended_within_sla'];
+            renderOrder.forEach(key => {
+                if (tables[key]) {
+                    resultsContainer.appendChild(createTableFromData(tables[key]));
+                }
+            });
+        } catch (error) {
+            feedbackContainer.innerHTML = `<div class="alert alert-error" style="display: block; background-color: var(--color-error); color: white; padding: 1rem; border-radius: 8px;">${error.message}</div>`;
+        } finally {
+            submitBtn.disabled = false;
+            loader.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %}

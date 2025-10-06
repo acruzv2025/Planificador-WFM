@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Administración - Emergia{% endblock %}
+
+{% block page_title %}Panel de Administración{% endblock %}
+
+{% block head_content %}
+<style>
+    .main-grid { display: grid; grid-template-columns: 1fr; gap: 2rem; }
+    @media (min-width: 1200px) { .main-grid { grid-template-columns: repeat(3, 1fr); } }
+    .section-card { background-color: #fcfdff; }
+    h2 { font-size: 1.2rem; border-bottom: 1px solid var(--color-border); padding-bottom: 0.75rem; }
+    h3 { font-size: 1.1rem; margin-top: 1rem; margin-bottom: 1rem; }
+    h4 { font-size: 1rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 1rem; color: var(--color-light-text); }
+    .form-group-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-check { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+    .permissions-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+    input[type="checkbox"] { width: auto; }
+    input:focus, select:focus { outline: none; border-color: var(--color-emergia-magenta); box-shadow: 0 0 0 3px rgba(136, 0, 227, 0.15); }
+    .btn-delete { background-color: var(--color-error); padding: 0.4rem 0.8rem; font-size: 0.8rem; width: auto; min-width: 80px; margin: 0; }
+    .btn-delete:hover { background-color: #c0392b; }
+    .btn-edit { background-color: #3498db; padding: 0.4rem 0.8rem; font-size: 0.8rem; width: auto; min-width: 80px; margin: 0 5px 0 0; }
+    .btn-edit:hover { background-color: #2980b9;}
+    .item-list ul { list-style: none; padding: 0;}
+    .item-list li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--color-border); flex-wrap: wrap; gap: 10px;}
+    .item-list li:last-child { border-bottom: none; }
+    .item-details { display: flex; flex-direction: column; }
+    hr { margin: 2rem 0; border: none; border-top: 1px solid var(--color-border); }
+    .schedule-grid { display: grid; grid-template-columns: 80px 1fr 1fr; gap: 0.5rem 1rem; align-items: center; }
+    .schedule-grid label { font-weight: normal; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+    {% endfor %}{% endif %}
+{% endwith %}
+
+<div class="main-grid">
+    <div class="section-card">
+        <h2>Campañas y Segmentos</h2>
+        <div class="item-list"><ul>
+            {% for campaign in campaigns %}
+                <li style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                        <strong>
+                            {% if campaign.code %}{{ campaign.code }} - {% endif %}{{ campaign.name }} 
+                            ({{ campaign.country }})
+                        </strong>
+                        <form method="POST" action="{{ url_for('admin') }}" onsubmit="return confirm('¿Eliminar esta campaña y todos sus segmentos?');" style="display: inline;">
+                            <input type="hidden" name="action" value="delete_campaign"><input type="hidden" name="delete_campaign_id" value="{{ campaign.id }}">
+                            <button type="submit" class="btn-delete">Eliminar</button>
+                        </form>
+                    </div>
+                    <ul style="padding-left: 20px; width: 100%;">
+                        {% for segment in campaign.segments %}
+                            <li style="justify-content: space-between;">
+                                <span>{{ segment.name }}</span>
+                                <div>
+                                    <button type="button" class="btn-edit" onclick="editSegment('{{ segment.id }}')">Editar</button>
+                                    <form method="POST" action="{{ url_for('admin') }}" onsubmit="return confirm('¿Eliminar este segmento?');" style="display: inline;">
+                                        <input type="hidden" name="action" value="delete_segment"><input type="hidden" name="delete_segment_id" value="{{ segment.id }}">
+                                        <button type="submit" class="btn-delete" style="background-color: #f39c12;">X</button>
+                                    </form>
+                                </div>
+                            </li>
+                        {% else %}
+                            <li style="color: var(--color-light-text);"><em>No hay segmentos</em></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+            {% endfor %}
+        </ul></div><hr>
+        <form method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" name="action" value="create_campaign">
+            <h3>Crear Campaña</h3>
+            <div class="form-group"><label>Código (Ej: 157006)</label><input type="text" name="new_campaign_code"></div>
+            <div class="form-group"><label>Nombre</label><input type="text" name="new_campaign_name" required></div>
+            <div class="form-group"><label>País</label><select name="new_campaign_country" required><option value="" disabled selected>Seleccione...</option><option value="España">España</option><option value="Colombia">Colombia</option></select></div>
+            <button type="submit">Crear Campaña</button>
+        </form><hr>
+        <form id="segment-form" method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" id="segment-action" name="action" value="create_segment">
+            <input type="hidden" id="segment-id" name="segment_id" value="">
+            <h3 id="segment-form-title">Crear Segmento</h3>
+            <div class="form-group"><label>Asignar a Campaña</label><select id="campaign-id" name="campaign_id_for_segment" required>{% for c in campaigns %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label>Nombre del Segmento</label><input type="text" id="segment-name" name="segment_name" required></div>
+            <h4>Horario de Servicio (Opcional)</h4>
+            <div class="schedule-grid">
+                <label style="font-weight: bold;">Día</label><label style="font-weight: bold;">Apertura</label><label style="font-weight: bold;">Cierre</label>
+                <label>Lunes</label><input type="time" name="lunes_apertura"><input type="time" name="lunes_cierre">
+                <label>Martes</label><input type="time" name="martes_apertura"><input type="time" name="martes_cierre">
+                <label>Miércoles</label><input type="time" name="miercoles_apertura"><input type="time" name="miercoles_cierre">
+                <label>Jueves</label><input type="time" name="jueves_apertura"><input type="time" name="jueves_cierre">
+                <label>Viernes</label><input type="time" name="viernes_apertura"><input type="time" name="viernes_cierre">
+                <label>Sábado</label><input type="time" name="sabado_apertura"><input type="time" name="sabado_cierre">
+                <label>Domingo</label><input type="time" name="domingo_apertura"><input type="time" name="domingo_cierre">
+            </div>
+            <h4 style="margin-top: 2rem;">Reglas de Fin de Semana del Segmento</h4>
+            <div class="form-group">
+               <label>Política de Fin de Semana</label>
+               <select id="weekend-policy" name="weekend_policy">
+                   <option value="REQUIRE_ONE_DAY_OFF" selected>Requiere 1 día libre (Estándar España)</option>
+                   <option value="FLEXIBLE">Flexible (Estándar Colombia)</option>
+                   <option value="MUST_WORK_WEEKEND">Debe trabajar findes (Ej: Pizza Hut)</option>
+               </select>
+           </div>
+           <div class="form-group">
+                <label>Mínimo Fines de Semana Completos Libres/Mes</label>
+                <input type="number" id="min-weekends-off" name="min_full_weekends_off_per_month" value="2" required>
+           </div>
+            <button type="submit" id="segment-submit-btn">Crear Segmento</button>
+            <button type="button" id="cancel-edit-btn" onclick="resetSegmentForm()" style="display:none; background-color: #7f8c8d; margin-top: 0.5rem;">Cancelar Edición</button>
+        </form>
+    </div>
+    <div class="section-card">
+        <h2>Usuarios y Permisos</h2>
+        <form method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" name="action" value="update_user">
+            <div class="item-list"><ul>
+                {% for user in users %}
+                    <li style="flex-direction: column; align-items: flex-start;">
+                        <span>{{ user.username }}</span>
+                        {% if user.username == 'admin' %}
+                            <span><strong>{{ user.role }}</strong> (Todos los permisos)</span>
+                        {% else %}
+                            <div class="form-group-inline" style="width: 100%;">
+                                <div class="form-group">
+                                    <label>Rol</label>
+                                    <select name="role_{{ user.id }}">
+                                        <option value="user" {% if user.role == 'user' %}selected{% endif %}>Usuario</option>
+                                        <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Permisos de Campaña</label>
+                                    <div class="permissions-list">
+                                        {% for c in campaigns %}
+                                        <div class="form-check">
+                                            <input type="checkbox" name="permissions_{{ user.id }}" value="{{ c.id }}" id="perm_{{ user.id }}_{{ c.id }}" {% if c in user.campaigns %}checked{% endif %}>
+                                            <label for="perm_{{ user.id }}_{{ c.id }}">{{ c.name }}</label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul></div>
+            <button type="submit">Guardar Cambios de Usuarios</button>
+        </form><hr>
+        <form method="POST" action="{{ url_for('admin') }}">
+            <input type="hidden" name="action" value="create_user">
+            <h3>Crear Usuario</h3>
+            <div class="form-group"><label>Nombre</label><input type="text" name="new_username"></div>
+            <div class="form-group"><label>Contraseña</label><input type="password" name="new_password"></div>
+            <div class="form-group"><label>Rol</label><select name="new_role"><option value="user" selected>Usuario</option><option value="admin">Administrador</option></select></div>
+            <button type="submit">Crear Usuario</button>
+        </form>
+    </div>
+     <div class="section-card">
+       <h2>Reglas de Contrato</h2>
+        <div class="item-list"><ul>
+            {% for rule in rules %}<li>
+                <div class="item-details">
+                    <strong>{{ rule.name }}</strong>
+                    <small style="color: var(--color-light-text);">
+                        {{ rule.country }} | {{ rule.workday_rule.weekly_hours }}h/sem | {{ rule.workday_rule.days_per_week }} días/sem
+                    </small>
+                </div>
+               <form method="POST" action="{{ url_for('admin') }}" onsubmit="return confirm('¿Eliminar esta regla?');">
+                   <input type="hidden" name="action" value="delete_rule"><input type="hidden" name="delete_rule_id" value="{{ rule.id }}">
+                   <button type="submit" class="btn-delete">Eliminar</button>
+               </form>
+            </li>{% else %}<li>No hay reglas creadas.</li>{% endfor %}
+        </ul></div><hr>
+       <form method="POST" action="{{ url_for('admin') }}">
+           <input type="hidden" name="action" value="create_rule">
+           <h3>Crear Nueva Regla (Contrato)</h3>
+           <div class="form-group"><label>Nombre (Ej: Contrato 39h ESP)</label><input type="text" name="new_rule_name" required></div>
+           <div class="form-group"><label>País</label><select name="new_rule_country" required><option value="" disabled selected>Seleccione...</option><option value="España">España</option><option value="Colombia">Colombia</option></select></div>
+           <h4>Reglas de Jornada</h4>
+           <div class="form-group"><label>Horas Semanales Contrato</label><input type="number" step="0.1" name="new_rule_weekly_hours" required></div>
+           <div class="form-group-inline">
+                <div class="form-group"><label>Max Horas/Día</label><input type="number" step="0.1" name="new_rule_max_daily_hours" required></div>
+                <div class="form-group"><label>Min Horas/Día</label><input type="number" step="0.1" name="new_rule_min_daily_hours" required></div>
+           </div>
+           <h4>Reglas de Días y Descansos</h4>
+           <div class="form-group-inline">
+                <div class="form-group"><label>Días de Trabajo por Semana</label><input type="number" name="new_rule_days_per_week" required value="5"></div>
+                <div class="form-group"><label>Max Días Consecutivos</label><input type="number" name="new_rule_max_consecutive" required value="7"></div>
+           </div>
+           <div class="form-group"><label>Descanso Entre Turnos (h)</label><input type="number" name="new_rule_min_hours_between" value="12" required></div>
+           <button type="submit">Crear Regla</button>
+       </form>
+   </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function editSegment(segmentId) {
+        const response = await fetch(`/api/get_segment_details/${segmentId}`);
+        if (!response.ok) {
+            alert('Error al cargar los datos del segmento.');
+            return;
+        }
+        const data = await response.json();
+        
+        document.getElementById('segment-form-title').innerText = 'Editar Segmento';
+        document.getElementById('segment-action').value = 'update_segment';
+        document.getElementById('segment-id').value = data.id;
+        document.getElementById('campaign-id').value = data.campaign_id;
+        document.getElementById('segment-name').value = data.name;
+        document.querySelector('[name="lunes_apertura"]').value = data.lunes_apertura;
+        document.querySelector('[name="lunes_cierre"]').value = data.lunes_cierre;
+        document.querySelector('[name="martes_apertura"]').value = data.martes_apertura;
+        document.querySelector('[name="martes_cierre"]').value = data.martes_cierre;
+        document.querySelector('[name="miercoles_apertura"]').value = data.miercoles_apertura;
+        document.querySelector('[name="miercoles_cierre"]').value = data.miercoles_cierre;
+        document.querySelector('[name="jueves_apertura"]').value = data.jueves_apertura;
+        document.querySelector('[name="jueves_cierre"]').value = data.jueves_cierre;
+        document.querySelector('[name="viernes_apertura"]').value = data.viernes_apertura;
+        document.querySelector('[name="viernes_cierre"]').value = data.viernes_cierre;
+        document.querySelector('[name="sabado_apertura"]').value = data.sabado_apertura;
+        document.querySelector('[name="sabado_cierre"]').value = data.sabado_cierre;
+        document.querySelector('[name="domingo_apertura"]').value = data.domingo_apertura;
+        document.querySelector('[name="domingo_cierre"]').value = data.domingo_cierre;
+        document.getElementById('weekend-policy').value = data.weekend_policy;
+        document.getElementById('min-weekends-off').value = data.min_full_weekends_off_per_month;
+        document.getElementById('segment-submit-btn').innerText = 'Guardar Cambios';
+        document.getElementById('cancel-edit-btn').style.display = 'block';
+        window.scrollTo(0, document.getElementById('segment-form').offsetTop);
+    }
+
+    function resetSegmentForm() {
+        document.getElementById('segment-form').reset();
+        document.getElementById('segment-form-title').innerText = 'Crear Segmento';
+        document.getElementById('segment-action').value = 'create_segment';
+        document.getElementById('segment-id').value = '';
+        document.getElementById('segment-submit-btn').innerText = 'Crear Segmento';
+        document.getElementById('cancel-edit-btn').style.display = 'none';
+    }
+</script>
+{% endblock %}

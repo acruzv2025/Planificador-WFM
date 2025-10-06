@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block title %}Distribución de Descansos - Emergia{% endblock %}
+
+{% block page_title %}Supervisión y Asignación de Descansos{% endblock %}
+
+{% block head_content %}
+<style>
+    /* --- INICIO DE ESTILOS COMPLETOS --- */
+
+    /* Contenedores y KPIs */
+    .chart-container { position: relative; height: 50vh; max-height: 450px; margin-bottom: 2rem; }
+    .kpi-container { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 2rem; flex-wrap: wrap; }
+    .kpi-box { background-color: var(--color-surface); padding: 1rem 1.5rem; border-radius: 12px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .kpi-box-title { font-size: 0.9rem; font-weight: 500; color: var(--color-light-text); margin-bottom: 0.5rem; }
+    .kpi-box-value { font-size: 2rem; font-weight: 700; color: var(--color-dark-text); }
+    .kpi-box-value span { font-size: 1.2rem; font-weight: 600; color: var(--color-light-text); }
+
+    /* --- Tabla de Descansos Organizada --- */
+    .breaks-detail-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .breaks-detail-table th, .breaks-detail-table td { padding: 12px 15px; vertical-align: middle; border-bottom: 1px solid var(--color-border); text-align: left; }
+    .breaks-detail-table th { font-weight: 600; position: sticky; top: 0; background-color: #f8f9fa; z-index: 2; }
+    .breaks-detail-table td:first-child, .breaks-detail-table th:first-child { position: sticky; left: 0; background-color: #ffffff; z-index: 1; border-right: 1px solid var(--color-border); min-width: 220px; }
+    .breaks-detail-table th:first-child { z-index: 3; }
+    .breaks-detail-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
+    .breaks-detail-table tbody tr:nth-child(even) td:first-child { background-color: #f8f9fa; }
+    .breaks-detail-table tbody tr:hover { background-color: #f0e6f9; }
+    .breaks-detail-table tbody tr:hover td:first-child { background-color: #f0e6f9; }
+
+    /* Contenido de celdas */
+    .agent-info .agent-name { font-weight: 600; }
+    .agent-info .agent-dni { font-size: 0.8rem; color: var(--color-light-text); display: block; }
+    .shift-info .shift-time { font-weight: 500; }
+    .shift-info .shift-hours { font-size: 0.8rem; color: var(--color-light-text); display: block; }
+    .break-tags-container { display: flex; flex-wrap: wrap; gap: 6px; }
+    .break-tag { background-color: #e9ecef; color: #495057; padding: 4px 10px; border-radius: 15px; font-size: 0.85rem; font-weight: 500; white-space: nowrap; }
+    .edit-btn { padding: 5px 12px; font-size: 0.8rem; font-weight: 600; border-radius: 6px; cursor: pointer; }
+
+    /* --- Estilos para el Modal de Edición --- */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 1000; display: none; justify-content: center; align-items: center; }
+    .modal-content { background: #fff; padding: 2rem; border-radius: 12px; max-width: 800px; width: 90%; box-shadow: 0 5px 25px rgba(0,0,0,0.2); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+    .modal-header h3 { margin: 0; font-size: 1.5rem; }
+    .modal-header .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: #888; }
+    .modal-body .form-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .modal-footer { text-align: right; margin-top: 2rem; }
+    .modal-footer button { margin-left: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-card">
+    <h2>Filtros y Acciones</h2>
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="segment_id">Servicio (Segmento)</label>
+            <select id="segment_id">
+                {% for segment in segments %}
+                    <option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group"><label for="start_date">Fecha de Inicio</label><input type="date" id="start_date"></div>
+        <div class="form-group"><label for="end_date">Fecha de Fin</label><input type="date" id="end_date"></div>
+        <div class="form-group" style="grid-template-columns: 1fr 1fr; display: grid; gap: 1rem;">
+            <button type="button" id="assign-breaks-btn" style="background-color: #f39c12;">Asignar/Reasignar Descansos</button>
+            <button type="button" id="fetch-breaks-btn" style="background-color: #27ae60;">Consultar Distribución</button>
+        </div>
+    </div>
+    <div class="loader" id="loader" style="display: none;"></div>
+    <div id="feedback"></div>
+</div>
+
+<div id="results-container" style="display: none;">
+    <div class="section-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <h2>Distribución de Descansos y Cobertura</h2>
+            <div class="form-group" style="min-width: 250px;">
+                <label for="chart-day-selector">Seleccionar Día</label>
+                <select id="chart-day-selector"></select>
+            </div>
+        </div>
+        <div class="kpi-container" id="kpi-container">
+             <div class="kpi-box">
+                <div class="kpi-box-title">Ausentismo Promedio (Periodo)</div>
+                <div class="kpi-box-value"><span id="avg-abs-value">--</span><span>%</span></div>
+            </div>
+            <div class="kpi-box">
+                <div class="kpi-box-title">Pico Agentes Fuera (Día Sel.)</div>
+                <div class="kpi-box-value"><span id="peak-agents-value">--</span></div>
+            </div>
+            <div class="kpi-box">
+                <div class="kpi-box-title">Hora del Pico (Día Sel.)</div>
+                <div class="kpi-box-value"><span id="peak-time-value">--:--</span></div>
+            </div>
+        </div>
+        <div class="chart-container"><canvas id="breaksChart"></canvas></div>
+    </div>
+    <div class="section-card">
+        <h2>Detalle de Descansos por Agente</h2>
+        <div id="breaks-table-container" class="table-wrapper"></div>
+    </div>
+</div>
+
+<!-- Estructura del Modal de Edición (inicialmente oculto) -->
+<div id="edit-modal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modal-title">Editar Descansos</h3>
+            <button type="button" class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p><strong>Agente:</strong> <span id="modal-agent-name"></span></p>
+            <p style="margin-bottom: 1.5rem;"><strong>Turno:</strong> <span id="modal-agent-shift"></span></p>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Inicio Descanso</label>
+                    <input type="text" id="modal-inicio_descanso" placeholder="HH:MM">
+                </div>
+                <div class="form-group">
+                    <label>Fin Descanso</label>
+                    <input type="text" id="modal-fin_descanso" placeholder="HH:MM">
+                </div>
+            </div>
+            <h4 style="margin-top: 1.5rem; margin-bottom: 1rem; border-top: 1px solid var(--color-border); padding-top: 1.5rem;">PVDs</h4>
+            <div class="form-grid">
+                <div class="form-group"><label>PVD 1</label><input type="text" id="modal-pvd1" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 2</label><input type="text" id="modal-pvd2" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 3</label><input type="text" id="modal-pvd3" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 4</label><input type="text" id="modal-pvd4" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 5</label><input type="text" id="modal-pvd5" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 6</label><input type="text" id="modal-pvd6" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 7</label><input type="text" id="modal-pvd7" placeholder="HH:MM"></div>
+                <div class="form-group"><label>PVD 8</label><input type="text" id="modal-pvd8" placeholder="HH:MM"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="secondary-btn" onclick="closeModal()">Cancelar</button>
+            <button type="button" id="save-modal-btn">Guardar Cambios</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+    const fetchBtn = document.getElementById('fetch-breaks-btn');
+    const assignBreaksBtn = document.getElementById('assign-breaks-btn');
+    const loader = document.getElementById('loader');
+    const feedback = document.getElementById('feedback');
+    const resultsContainer = document.getElementById('results-container');
+    const chartCanvas = document.getElementById('breaksChart');
+    const tableContainer = document.getElementById('breaks-table-container');
+    const daySelector = document.getElementById('chart-day-selector');
+    const modal = document.getElementById('edit-modal');
+    
+    let breaksChart = null;
+    let chartDataStore = {};
+    let kpiDataStore = {};
+    let fullTableData = [];
+
+    assignBreaksBtn.addEventListener('click', async () => {
+        if (!confirm("Esto asignará y distribuirá los descansos para el periodo seleccionado, guardando los cambios. ¿Desea continuar?")) return;
+        feedback.innerHTML = ''; loader.style.display = 'block'; assignBreaksBtn.disabled = true; fetchBtn.disabled = true;
+        const segmentId = document.getElementById('segment_id').value;
+        const startDate = document.getElementById('start_date').value;
+        const endDate = document.getElementById('end_date').value;
+        if (!segmentId || !startDate || !endDate) {
+            feedback.innerHTML = `<div class="alert alert-error">Por favor, seleccione un servicio y un rango de fechas.</div>`;
+            loader.style.display = 'none'; assignBreaksBtn.disabled = false; fetchBtn.disabled = false;
+            return;
+        }
+        try {
+            const assignResponse = await fetch("{{ url_for('assign_breaks') }}", {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ segment_id: segmentId, start_date: startDate, end_date: endDate })
+            });
+            const assignResult = await assignResponse.json();
+            if (!assignResponse.ok) throw new Error(assignResult.error);
+            feedback.innerHTML = `<div class="alert alert-success">${assignResult.message}</div>`;
+            fetchBtn.click(); // Automáticamente consulta los datos después de asignar
+        } catch (error) {
+            feedback.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+        } finally {
+            assignBreaksBtn.disabled = false; fetchBtn.disabled = false; loader.style.display = 'none';
+        }
+    });
+
+    fetchBtn.addEventListener('click', async () => {
+        loader.style.display = 'block';
+        if (!feedback.querySelector('.alert-success')) feedback.innerHTML = '';
+        resultsContainer.style.display = 'none';
+        assignBreaksBtn.disabled = true; fetchBtn.disabled = true;
+        const segmentId = document.getElementById('segment_id').value;
+        const startDate = document.getElementById('start_date').value;
+        const endDate = document.getElementById('end_date').value;
+        if (!segmentId || !startDate || !endDate) {
+            feedback.innerHTML = `<div class="alert alert-error">Por favor, complete todos los filtros.</div>`;
+            loader.style.display = 'none'; assignBreaksBtn.disabled = false; fetchBtn.disabled = false; return;
+        }
+        try {
+            const response = await fetch("{{ url_for('get_break_distribution') }}", {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ segment_id: segmentId, start_date: startDate, end_date: endDate })
+            });
+            const result = await response.json();
+            if (!response.ok) { throw new Error(result.error); }
+            chartDataStore = result.chart_data;
+            kpiDataStore = result.kpi_data;
+            fullTableData = result.table_data;
+            renderDaySelector();
+            renderBreakChart();
+            renderBreakTable();
+            resultsContainer.style.display = 'block';
+        } catch (error) {
+            feedback.innerHTML = `<div class="alert alert-error">Error: ${error.message}</div>`;
+        } finally {
+            loader.style.display = 'none'; assignBreaksBtn.disabled = false; fetchBtn.disabled = false;
+        }
+    });
+
+    function renderDaySelector() {
+        daySelector.innerHTML = '';
+        const sortedDays = Object.keys(chartDataStore.days).sort();
+        const avgOption = document.createElement('option');
+        avgOption.value = 'average'; avgOption.textContent = 'Promedio del Periodo';
+        daySelector.appendChild(avgOption);
+        sortedDays.forEach(day => {
+            const option = document.createElement('option');
+            option.value = day;
+            option.textContent = new Date(day + 'T00:00:00').toLocaleDateString('es-ES', { dateStyle: 'full' });
+            daySelector.appendChild(option);
+        });
+        daySelector.onchange = () => { renderBreakChart(); renderBreakTable(); };
+    }
+
+    function renderBreakChart() {
+        const selectedDay = daySelector.value;
+        let coverageData, breaksData, pvdsData;
+        if (selectedDay === 'average') {
+            const numDays = Object.keys(chartDataStore.days).length;
+            const numLabels = chartDataStore.labels.length;
+            coverageData = new Array(numLabels).fill(0); breaksData = new Array(numLabels).fill(0); pvdsData = new Array(numLabels).fill(0);
+            for (const day of Object.values(chartDataStore.days)) {
+                for(let i = 0; i < numLabels; i++) {
+                    coverageData[i] += day.coverage[i]; breaksData[i] += day.breaks[i]; pvdsData[i] += day.pvds[i];
+                }
+            }
+            if (numDays > 0) {
+                coverageData = coverageData.map(c => c / numDays); breaksData = breaksData.map(b => b / numDays); pvdsData = pvdsData.map(p => p / numDays);
+            }
+        } else {
+            const dayData = chartDataStore.days[selectedDay];
+            coverageData = dayData.coverage; breaksData = dayData.breaks; pvdsData = dayData.pvds;
+        }
+        let startIndex = coverageData.findIndex(v => v > 0);
+        let endIndex = coverageData.length - 1 - [...coverageData].reverse().findIndex(v => v > 0);
+        if (startIndex === -1) { startIndex = 0; endIndex = chartDataStore.labels.length - 1; } 
+        else { startIndex = Math.max(0, startIndex - 6); endIndex = Math.min(chartDataStore.labels.length - 1, endIndex + 6); }
+        const slicedLabels = chartDataStore.labels.slice(startIndex, endIndex + 1);
+        const slicedCoverage = coverageData.slice(startIndex, endIndex + 1);
+        const slicedBreaks = breaksData.slice(startIndex, endIndex + 1);
+        const slicedPvds = pvdsData.slice(startIndex, endIndex + 1);
+        let peakAgentsValue = 0; let peakTimeValue = '--:--';
+        for (let i = 0; i < chartDataStore.labels.length; i++) {
+            const totalOnBreak = (breaksData[i] || 0) + (pvdsData[i] || 0);
+            if (totalOnBreak > peakAgentsValue) {
+                peakAgentsValue = totalOnBreak; peakTimeValue = chartDataStore.labels[i];
+            }
+        }
+        updateKpiBoxes(peakAgentsValue, peakTimeValue);
+        if (breaksChart) { breaksChart.destroy(); }
+        breaksChart = new Chart(chartCanvas, {
+            type: 'bar',
+            data: { labels: slicedLabels.map(l => l.slice(0,5)), datasets: [ { type: 'line', label: 'Cobertura', data: slicedCoverage, borderColor: '#3498db', fill: false, tension: 0.2, pointRadius: 0 }, { type: 'bar', label: 'Descansos', data: slicedBreaks, backgroundColor: '#f1c40f' }, { type: 'bar', label: 'PVDs', data: slicedPvds, backgroundColor: '#e74c3c' } ] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Nº de Agentes' }, ticks: { stepSize: 5 } }, x: { stacked: true, title: { display: true, text: 'Intervalo del Día' }, ticks: { maxRotation: 90, minRotation: 90, autoSkip: false, font: { size: 10 } } } } }
+        });
+    }
+    
+    function updateKpiBoxes(peakAgents, peakTime) {
+        const totalWorkHours = kpiDataStore.total_work_hours || 0;
+        const totalBreakMinutes = kpiDataStore.total_break_minutes || 0;
+        const avgAbs = totalWorkHours > 0 ? (totalBreakMinutes / (totalWorkHours * 60)) * 100 : 0;
+        document.getElementById('avg-abs-value').textContent = avgAbs.toFixed(1);
+        document.getElementById('peak-agents-value').textContent = Math.round(peakAgents);
+        document.getElementById('peak-time-value').textContent = peakTime;
+    }
+
+    function renderBreakTable() {
+        const dayFilter = daySelector.value;
+        let dataToRender = fullTableData;
+        if (dayFilter && dayFilter !== 'average') {
+            const filterDateStr = new Date(dayFilter + 'T00:00:00').toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric'});
+            dataToRender = fullTableData.filter(row => row.fecha === filterDateStr);
+        }
+        if (!dataToRender || dataToRender.length === 0) {
+            tableContainer.innerHTML = "<p>No se encontraron datos para la selección actual.</p>"; return;
+        }
+        let tableHTML = `<table class="breaks-detail-table"><thead><tr><th>Agente</th><th>Fecha</th><th>Turno</th><th>Descanso Principal</th><th>PVDs Asignados</th><th>Acciones</th></tr></thead><tbody>`;
+        dataToRender.forEach(row => {
+            const agentInfo = `<div class="agent-info"><span class="agent-name">${row.nombre || ''}</span><span class="agent-dni">${row.dni || ''}</span></div>`;
+            const shiftInfo = `<div class="shift-info"><span class="shift-time">${row.turno || ''}</span><span class="shift-hours">(${row.horas || 0} hrs)</span></div>`;
+            const mainBreak = (row.inicio_descanso && row.fin_descanso) ? `${row.inicio_descanso} - ${row.fin_descanso}` : '-';
+            const pvds = [row.pvd1, row.pvd2, row.pvd3, row.pvd4, row.pvd5, row.pvd6, row.pvd7, row.pvd8];
+            const pvdTags = pvds.filter(pvd => pvd).map(pvd => `<span class="break-tag">${pvd}</span>`).join('');
+            const pvdContainer = pvdTags ? `<div class="break-tags-container">${pvdTags}</div>` : '-';
+            tableHTML += `<tr><td>${agentInfo}</td><td>${row.fecha}</td><td>${shiftInfo}</td><td>${mainBreak}</td><td>${pvdContainer}</td><td><button class="edit-btn" onclick="openModal('${row.unique_id}')">Editar</button></td></tr>`;
+        });
+        tableHTML += '</tbody></table>';
+        tableContainer.innerHTML = tableHTML;
+    }
+
+    function openModal(uniqueId) {
+        const record = fullTableData.find(row => row.unique_id == uniqueId);
+        if (!record) return;
+        document.getElementById('modal-agent-name').textContent = record.nombre;
+        document.getElementById('modal-agent-shift').textContent = `${record.turno} (${record.horas} hrs)`;
+        document.getElementById('modal-inicio_descanso').value = record.inicio_descanso || '';
+        document.getElementById('modal-fin_descanso').value = record.fin_descanso || '';
+        for (let i = 1; i <= 8; i++) {
+            document.getElementById(`modal-pvd${i}`).value = record[`pvd${i}`] || '';
+        }
+        document.getElementById('save-modal-btn').dataset.uniqueId = uniqueId;
+        modal.style.display = 'flex';
+    }
+
+    function closeModal() {
+        modal.style.display = 'none';
+    }
+
+    document.getElementById('save-modal-btn').addEventListener('click', async (event) => {
+        const uniqueId = event.target.dataset.uniqueId;
+        const record = fullTableData.find(row => row.unique_id == uniqueId);
+        if (!record) return;
+        const updatedData = { schedule_id: record.schedule_id, inicio_descanso: document.getElementById('modal-inicio_descanso').value.trim(), fin_descanso: document.getElementById('modal-fin_descanso').value.trim() };
+        for (let i = 1; i <= 8; i++) { updatedData[`pvd${i}`] = document.getElementById(`modal-pvd${i}`).value.trim(); }
+        const originalRecord = { ...record };
+        const saveBtn = event.target;
+        saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
+        try {
+            const response = await fetch("{{ url_for('update_breaks_bulk') }}", {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedData)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
+            Object.assign(record, updatedData);
+            updateChartAfterBulkEdit(originalRecord, record);
+            renderBreakTable();
+            renderBreakChart();
+            feedback.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
+            closeModal();
+        } catch (error) {
+            alert(`Error al guardar: ${error.message}`);
+        } finally {
+            saveBtn.disabled = false; saveBtn.textContent = 'Guardar Cambios';
+        }
+    });
+
+    function updateChartAfterBulkEdit(originalRecord, newRecord) {
+        const dayStr = new Date(originalRecord.fecha.split('/').reverse().join('-') + 'T00:00:00').toISOString().split('T')[0];
+        if (!chartDataStore.days[dayStr]) return;
+        const updateIntervals = (record, operation) => {
+            if (record.inicio_descanso && record.fin_descanso) {
+                const duration = (new Date(`1970-01-01T${record.fin_descanso}`) - new Date(`1970-01-01T${record.inicio_descanso}`)) / 60000;
+                if (duration > 0) updateChartValues(dayStr, record.inicio_descanso, duration, 'breaks', operation);
+            }
+            for (let i = 1; i <= 8; i++) {
+                const pvdTime = record[`pvd${i}`];
+                if (pvdTime) updateChartValues(dayStr, pvdTime, 5, 'pvds', operation);
+            }
+        };
+        updateIntervals(originalRecord, 'subtract');
+        updateIntervals(newRecord, 'add');
+    }
+
+    function updateChartValues(dayStr, startTimeStr, duration, type, operation) {
+        const change = (operation === 'add') ? 1 : -1;
+        const startTimeObj = new Date(`1970-01-01T${startTimeStr}`);
+        const endTimeObj = new Date(startTimeObj.getTime() + duration * 60000);
+        chartDataStore.labels.forEach((label, i) => {
+            const intervalStart = new Date(`1970-01-01T${label}`);
+            const intervalEnd = new Date(intervalStart.getTime() + 5 * 60000);
+            if (Math.max(startTimeObj, intervalStart) < Math.min(endTimeObj, intervalEnd)) {
+                chartDataStore.days[dayStr][type][i] += change;
+            }
+        });
+    }
+</script>
+{% endblock %}
