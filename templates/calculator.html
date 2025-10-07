@@ -134,10 +134,18 @@
                         {% for segment in segments %}<option value="{{ segment.id }}">{{ segment.campaign.name }} - {{ segment.name }}</option>{% else %}<option value="" disabled>No tienes permisos.</option>{% endfor %}
                     </select>
                 </div>
-                <div class="form-group">
-                    <label for="plantilla_excel">Cargar archivo (.xlsx)</label>
-                    <input type="file" id="plantilla_excel" name="plantilla_excel" accept=".xlsx" required>
-                </div>
+                    <div class="form-group">
+        <label for="start_date">Fecha de Inicio del Cálculo</label>
+        <input type="date" id="start_date" name="start_date" required>
+    </div>
+    <div class="form-group">
+        <label for="end_date">Fecha de Fin del Cálculo</label>
+        <input type="date" id="end_date" name="end_date" required>
+    </div>
+    <div class="form-group">
+        <label for="plantilla_excel">Cargar archivo de Reductores y AHT (.xlsx)</label>
+        <input type="file" id="plantilla_excel" name="plantilla_excel" accept=".xlsx" required>
+    </div>
             </div>
             <div class="form-section">
                 <h2>Parámetros de Cálculo</h2>
